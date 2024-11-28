@@ -10,11 +10,9 @@ class ProcessingResult:
     detected_bubbles: List[Tuple[int, int, int, int]]
 
 class MCQProcessor:
-    # Constants for answer sheet structure
     TOTAL_QUESTIONS = 90
     OPTIONS_PER_QUESTION = 5
-    NUM_COLUMNS = 3
-    QUESTIONS_PER_COLUMN = 30
+    TOTAL_BUBBLES = TOTAL_QUESTIONS * OPTIONS_PER_QUESTION
 
     def __init__(self, threshold: int = 128, min_bubble_size: int = 15, max_bubble_size: int = 30, contrast: float = 1.0, correct_answers: Dict[int, str] = None):
         self.threshold = threshold
@@ -58,56 +56,6 @@ class MCQProcessor:
         }
         
         return cleaned, debug_images
-    
-    def split_into_columns(self, bubbles: List[Tuple[int, int, int, int]]) -> List[List[Tuple[int, int, int, int]]]:
-        """Split bubbles into columns based on x-coordinates"""
-        if not bubbles:
-            return []
-            
-        # Sort bubbles by x-coordinate
-        bubbles_sorted = sorted(bubbles, key=lambda x: x[0])
-        
-        # Find column boundaries using x-coordinates
-        x_coords = [b[0] for b in bubbles_sorted]
-        x_min, x_max = min(x_coords), max(x_coords)
-        column_width = (x_max - x_min) / self.NUM_COLUMNS
-        
-        # Split into columns
-        columns = [[] for _ in range(self.NUM_COLUMNS)]
-        for bubble in bubbles_sorted:
-            col_index = int((bubble[0] - x_min) / column_width)
-            col_index = min(col_index, self.NUM_COLUMNS - 1)  # Ensure within bounds
-            columns[col_index].append(bubble)
-            
-        return columns
-
-    def organize_column_bubbles(self, column_bubbles: List[Tuple[int, int, int, int]]) -> List[List[Tuple[int, int, int, int]]]:
-        """Organize bubbles in a column into rows of 5 options"""
-        # Sort by y-coordinate
-        sorted_bubbles = sorted(column_bubbles, key=lambda x: x[1])
-        
-        # Group into rows based on y-coordinate proximity
-        rows = []
-        current_row = []
-        last_y = None
-        
-        for bubble in sorted_bubbles:
-            if last_y is None or abs(bubble[1] - last_y) < self.min_bubble_size:
-                current_row.append(bubble)
-            else:
-                if len(current_row) == self.OPTIONS_PER_QUESTION:
-                    # Sort row by x-coordinate
-                    current_row.sort(key=lambda x: x[0])
-                    rows.append(current_row)
-                current_row = [bubble]
-            last_y = bubble[1]
-            
-        # Add last row if complete
-        if len(current_row) == self.OPTIONS_PER_QUESTION:
-            current_row.sort(key=lambda x: x[0])
-            rows.append(current_row)
-            
-        return rows
 
     def detect_bubbles(self, preprocessed: np.ndarray, original_image: np.ndarray) -> Tuple[List[Tuple[int, int, int, int]], np.ndarray]:
         # Find contours
@@ -118,91 +66,78 @@ class MCQProcessor:
         )
         
         bubbles = []
-        # Create visualization image
         vis_image = original_image.copy()
         
-        min_area = self.min_bubble_size * self.min_bubble_size
-        max_area = self.max_bubble_size * self.max_bubble_size
-        
+        # Process each contour
         for contour in contours:
             area = cv2.contourArea(contour)
+            if area < self.min_bubble_size * self.min_bubble_size or area > self.max_bubble_size * self.max_bubble_size:
+                continue
+                
             perimeter = cv2.arcLength(contour, True)
             if perimeter == 0:
                 continue
                 
             circularity = 4 * np.pi * area / (perimeter * perimeter)
-            
-            if (circularity > 0.5 and area > min_area and area < max_area):
+            if circularity > 0.3:  # More lenient circularity threshold
                 x, y, w, h = cv2.boundingRect(contour)
                 bubbles.append((x, y, w, h))
         
-        # Split bubbles into columns and validate structure
-        columns = self.split_into_columns(bubbles)
-        valid_bubbles = []
+        # Sort bubbles by position (top-to-bottom, left-to-right)
+        sorted_bubbles = sorted(bubbles, key=lambda b: (b[1] // (self.max_bubble_size * 2), b[0]))
         
-        for col_idx, column in enumerate(columns):
-            rows = self.organize_column_bubbles(column)
+        # Keep only the first TOTAL_BUBBLES (450) bubbles
+        valid_bubbles = sorted_bubbles[:self.TOTAL_BUBBLES]
+        
+        # Visualize bubbles
+        for x, y, w, h in valid_bubbles:
+            # Blue rectangle for all detected bubbles
+            cv2.rectangle(vis_image, (x, y), (x+w, y+h), (255, 0, 0), 2)
             
-            # Only keep bubbles that fit the expected grid structure
-            for row_idx, row in enumerate(rows):
-                if len(row) == self.OPTIONS_PER_QUESTION:
-                    valid_bubbles.extend(row)
-                    
-                    # Calculate question number
-                    question_num = col_idx * self.QUESTIONS_PER_COLUMN + row_idx + 1
-                    
-                    # Draw bubbles and process marks
-                    for opt_idx, bubble in enumerate(row):
-                        x, y, w, h = bubble
-                        option = chr(65 + opt_idx)
-                        
-                        # Blue rectangle for all detected bubbles
-                        cv2.rectangle(vis_image, (x, y), (x+w, y+h), (255, 0, 0), 2)
-                        
-                        # Check if bubble is marked
-                        roi = preprocessed[y:y+h, x:x+w]
-                        is_marked = np.mean(roi) > 127
-                        
-                        if is_marked:
-                            # Red dot for marked answers
-                            center = (x + w//2, y + h//2)
-                            radius = min(w, h) // 4
-                            cv2.circle(vis_image, center, radius, (0, 0, 255), -1)
-                        
-                        # Green outline for correct answers
-                        if self.correct_answers.get(question_num) == option:
-                            cv2.rectangle(vis_image, (x-2, y-2), (x+w+2, y+h+2), (0, 255, 0), 2)
+            # Check if bubble is marked
+            roi = preprocessed[y:y+h, x:x+w]
+            is_marked = np.mean(roi) > 127
+            
+            if is_marked:
+                # Red dot for marked answers
+                center = (x + w//2, y + h//2)
+                radius = min(w, h) // 4
+                cv2.circle(vis_image, center, radius, (0, 0, 255), -1)
+            
+            # Calculate question number and option
+            bubble_index = valid_bubbles.index((x, y, w, h))
+            question_num = (bubble_index // self.OPTIONS_PER_QUESTION) + 1
+            option = chr(65 + (bubble_index % self.OPTIONS_PER_QUESTION))
+            
+            # Green outline for correct answers
+            if self.correct_answers.get(question_num) == option:
+                cv2.rectangle(vis_image, (x-2, y-2), (x+w+2, y+h+2), (0, 255, 0), 2)
         
         return valid_bubbles, vis_image
-    
+
     def analyze_answers(self, image: np.ndarray, bubbles: List[Tuple[int, int, int, int]]) -> Tuple[Dict[int, str], Dict[int, float]]:
         answers = {}
         confidence = {}
         
-        # Split bubbles into columns
-        columns = self.split_into_columns(bubbles)
-        
-        for col_idx, column in enumerate(columns):
-            rows = self.organize_column_bubbles(column)
+        # Process bubbles in groups of 5 (one group per question)
+        for q in range(self.TOTAL_QUESTIONS):
+            question_bubbles = bubbles[q * self.OPTIONS_PER_QUESTION : (q + 1) * self.OPTIONS_PER_QUESTION]
             
-            for row_idx, row in enumerate(rows):
-                if len(row) == self.OPTIONS_PER_QUESTION:
-                    question_num = col_idx * self.QUESTIONS_PER_COLUMN + row_idx + 1
-                    max_darkness = 0
-                    selected_option = None
+            if len(question_bubbles) == self.OPTIONS_PER_QUESTION:
+                max_darkness = 0
+                selected_option = None
+                
+                for opt_idx, (x, y, w, h) in enumerate(question_bubbles):
+                    roi = image[y:y+h, x:x+w]
+                    darkness = np.mean(roi)
                     
-                    for opt_idx, bubble in enumerate(row):
-                        x, y, w, h = bubble
-                        roi = image[y:y+h, x:x+w]
-                        darkness = np.mean(roi)
-                        
-                        if darkness > max_darkness:
-                            max_darkness = darkness
-                            selected_option = chr(65 + opt_idx)
-                    
-                    if question_num <= self.TOTAL_QUESTIONS:
-                        answers[question_num] = selected_option
-                        confidence[question_num] = max_darkness / 255
+                    if darkness > max_darkness:
+                        max_darkness = darkness
+                        selected_option = chr(65 + opt_idx)
+                
+                question_num = q + 1
+                answers[question_num] = selected_option
+                confidence[question_num] = max_darkness / 255
         
         return answers, confidence
     
