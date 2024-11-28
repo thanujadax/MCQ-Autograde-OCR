@@ -92,7 +92,7 @@ class MCQProcessor:
         # Visualize bubbles
         for x, y, w, h in valid_bubbles:
             # Blue rectangle for all detected bubbles
-            cv2.rectangle(vis_image, (x, y), (x+w, y+h), (255, 0, 0), 2)
+            cv2.rectangle(vis_image, (x, y), (x+w, y+h), (255, 0, 0), 1)
             
             # Check if bubble is marked
             roi = preprocessed[y:y+h, x:x+w]
@@ -101,7 +101,7 @@ class MCQProcessor:
             if is_marked:
                 # Red dot for marked answers
                 center = (x + w//2, y + h//2)
-                radius = min(w, h) // 4
+                radius = min(w, h) // 3  # Slightly larger red dot
                 cv2.circle(vis_image, center, radius, (0, 0, 255), -1)
             
             # Calculate question number and option
@@ -111,7 +111,7 @@ class MCQProcessor:
             
             # Green outline for correct answers
             if self.correct_answers.get(question_num) == option:
-                cv2.rectangle(vis_image, (x-2, y-2), (x+w+2, y+h+2), (0, 255, 0), 2)
+                cv2.rectangle(vis_image, (x-2, y-2), (x+w+2, y+h+2), (0, 255, 0), 3)  # Thicker green outline
         
         return valid_bubbles, vis_image
 
