@@ -3,18 +3,6 @@ import plotly.graph_objects as go
 import numpy as np
 from typing import Dict, List
 
-def display_side_by_side(image1: np.ndarray, image2: np.ndarray, labels: tuple = ("Image 1", "Image 2")):
-    """Display two images side by side"""
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader(labels[0])
-        st.image(image1, use_column_width=True)
-    
-    with col2:
-        st.subheader(labels[1])
-        st.image(image2, use_column_width=True)
-
 def display_debug_pipeline(debug_images: Dict[str, np.ndarray]):
     """Display the debug pipeline with all processing steps"""
     st.write("Processing Steps:")

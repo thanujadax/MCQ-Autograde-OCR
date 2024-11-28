@@ -3,7 +3,6 @@ import cv2
 import numpy as np
 from processing import MCQProcessor
 from visualization import (
-    display_side_by_side,
     display_debug_pipeline,
     plot_detection_results
 )
@@ -38,21 +37,18 @@ def main():
         # Load and process image
         image = load_image(uploaded_file)
         
-        # Create columns for split view
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader("Original Image")
-            st.image(image, use_column_width=True)
-        
         # Process image
         with st.spinner("Processing image..."):
             try:
                 result, debug_images = processor.process(image)
                 
-                with col2:
-                    st.subheader("Processed Result")
-                    plot_detection_results(result)
+                # Display processed image with overlaid detections
+                st.subheader("Detected Answer Sheet")
+                st.image(debug_images['detected_bubbles'], use_container_width=True)
+                
+                # Display answer results
+                st.subheader("Detected Answers")
+                plot_detection_results(result)
                 
                 # Debug pipeline visualization
                 st.subheader("Processing Pipeline")
