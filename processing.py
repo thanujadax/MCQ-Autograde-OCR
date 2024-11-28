@@ -121,8 +121,8 @@ class MCQProcessor:
         # Create visualization image
         vis_image = original_image.copy()
         
-        min_area = np.pi * (self.min_bubble_size / 2) ** 2 * 0.5
-        max_area = np.pi * (self.max_bubble_size / 2) ** 2
+        min_area = self.min_bubble_size * self.min_bubble_size
+        max_area = self.max_bubble_size * self.max_bubble_size
         
         for contour in contours:
             area = cv2.contourArea(contour)
@@ -132,7 +132,7 @@ class MCQProcessor:
                 
             circularity = 4 * np.pi * area / (perimeter * perimeter)
             
-            if (circularity > 0.7 and area > min_area and area < max_area):
+            if (circularity > 0.5 and area > min_area and area < max_area):
                 x, y, w, h = cv2.boundingRect(contour)
                 bubbles.append((x, y, w, h))
         
