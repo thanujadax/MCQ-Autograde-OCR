@@ -99,19 +99,17 @@ class MCQProcessor:
             is_marked = np.mean(roi) > 127
             
             if is_marked:
-                # Red dot for marked answers
-                center = (x + w//2, y + h//2)
-                radius = min(w, h) // 3  # Slightly larger red dot
-                cv2.circle(vis_image, center, radius, (0, 0, 255), -1)
+                # Red square for marked answers
+                cv2.rectangle(vis_image, (x, y), (x+w, y+h), (0, 0, 255), 2)
             
             # Calculate question number and option
             bubble_index = valid_bubbles.index((x, y, w, h))
             question_num = (bubble_index // self.OPTIONS_PER_QUESTION) + 1
             option = chr(65 + (bubble_index % self.OPTIONS_PER_QUESTION))
             
-            # Green outline for correct answers
+            # Blue filled rectangle for correct answers
             if self.correct_answers.get(question_num) == option:
-                cv2.rectangle(vis_image, (x-2, y-2), (x+w+2, y+h+2), (0, 255, 0), 3)  # Thicker green outline
+                cv2.rectangle(vis_image, (x, y), (x+w, y+h), (255, 0, 0), -1)
         
         return valid_bubbles, vis_image
 
@@ -154,6 +152,24 @@ class MCQProcessor:
         # Detect bubbles
         bubbles, bubble_visualization = self.detect_bubbles(preprocessed, image)
         debug_images['detected_bubbles'] = bubble_visualization
+        
+        # Create detected answers visualization
+        answers_visualization = image.copy()
+        for x, y, w, h in bubbles:
+            bubble_index = bubbles.index((x, y, w, h))
+            question_num = (bubble_index // self.OPTIONS_PER_QUESTION) + 1
+            option = chr(65 + (bubble_index % self.OPTIONS_PER_QUESTION))
+            
+            roi = preprocessed[y:y+h, x:x+w]
+            is_marked = np.mean(roi) > 127
+            
+            if is_marked or self.correct_answers.get(question_num) == option:
+                if is_marked:
+                    cv2.rectangle(answers_visualization, (x, y), (x+w, y+h), (0, 0, 255), 2)
+                if self.correct_answers.get(question_num) == option:
+                    cv2.rectangle(answers_visualization, (x, y), (x+w, y+h), (255, 0, 0), -1)
+        
+        debug_images['detected_answers'] = answers_visualization
         
         # Analyze answers
         answers, confidence = self.analyze_answers(preprocessed, bubbles)
