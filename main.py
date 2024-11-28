@@ -27,13 +27,13 @@ def main():
     
     min_bubble_size = st.sidebar.slider(
         "Minimum Bubble Size",
-        10, 40, 15,
+        10, 30, 15,
         help="Minimum size (in pixels) of bubbles to detect"
     )
     
     max_bubble_size = st.sidebar.slider(
         "Maximum Bubble Size",
-        min_bubble_size, 50, 30,
+        20, 50, 30,
         help="Maximum size (in pixels) of bubbles to detect"
     )
     

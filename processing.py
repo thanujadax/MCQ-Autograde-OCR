@@ -69,7 +69,7 @@ class MCQProcessor:
         max_area = np.pi * (self.max_bubble_size / 2) ** 2
         
         for contour in contours:
-            # Filter by area and circularity
+            # Simple filtering based on area and circularity
             area = cv2.contourArea(contour)
             perimeter = cv2.arcLength(contour, True)
             if perimeter == 0:
@@ -77,10 +77,9 @@ class MCQProcessor:
                 
             circularity = 4 * np.pi * area / (perimeter * perimeter)
             
-            # Improved filtering criteria
-            if (circularity > 0.8 and  # More strict circularity
-                min_area < area < max_area and  # Dynamic area based on bubble_size
-                cv2.contourArea(contour) / (cv2.minAreaRect(contour)[1][0] * cv2.minAreaRect(contour)[1][1]) > 0.7):  # Rectangularity check
+            # Simplified filtering criteria
+            if (circularity > 0.7 and  # Less strict circularity
+                area > min_area and area < max_area):  # Simple area check
                 
                 x, y, w, h = cv2.boundingRect(contour)
                 bubbles.append((x, y, w, h))
