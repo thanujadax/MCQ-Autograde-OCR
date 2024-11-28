@@ -99,9 +99,14 @@ class MCQProcessor:
             question_num = (bubble_index // self.OPTIONS_PER_QUESTION) + 1
             option = chr(65 + (bubble_index % self.OPTIONS_PER_QUESTION))
             
-            # Check if bubble meets marking criteria
+            # Create a mask for the bubble ROI
+            bubble_mask = np.zeros((h, w), dtype=np.uint8)
+            cv2.circle(bubble_mask, (w//2, h//2), min(w, h)//2 - 2, 255, -1)
+            
+            # Get ROI and apply bubble mask
             roi = preprocessed[y:y+h, x:x+w]
-            darkness = np.mean(roi)
+            roi_masked = cv2.bitwise_and(roi, roi, mask=bubble_mask)
+            darkness = np.sum(roi_masked) / (np.sum(bubble_mask > 0) + 1e-6)
             
             # Get darkness values for all options in this question
             question_start = (question_num - 1) * self.OPTIONS_PER_QUESTION
@@ -110,8 +115,12 @@ class MCQProcessor:
             darkness_values = []
             
             for qx, qy, qw, qh in question_bubbles:
+                q_mask = np.zeros((qh, qw), dtype=np.uint8)
+                cv2.circle(q_mask, (qw//2, qh//2), min(qw, qh)//2 - 2, 255, -1)
                 q_roi = preprocessed[qy:qy+qh, qx:qx+qw]
-                darkness_values.append(np.mean(q_roi))
+                q_roi_masked = cv2.bitwise_and(q_roi, q_roi, mask=q_mask)
+                q_darkness = np.sum(q_roi_masked) / (np.sum(q_mask > 0) + 1e-6)
+                darkness_values.append(q_darkness)
             
             # Check if this bubble is significantly darker
             max_darkness = max(darkness_values)
@@ -121,12 +130,14 @@ class MCQProcessor:
                         (max_darkness - second_max) > 30)
             
             if is_marked:
-                # Red rectangle for marked answers meeting criteria
-                cv2.rectangle(vis_image, (x, y), (x+w, y+h), (0, 0, 255), 2)
+                # Red outline for marked answers (within bubble boundary)
+                cv2.circle(vis_image, (x + w//2, y + h//2), min(w, h)//2 - 2, (0, 0, 255), 2)
             
-            # Blue filled rectangle for correct answers
+            # Blue fill for correct answers (within bubble boundary)
             if self.correct_answers.get(question_num) == option:
-                cv2.rectangle(vis_image, (x, y), (x+w, y+h), (255, 0, 0), -1)
+                mask = np.zeros_like(vis_image)
+                cv2.circle(mask, (x + w//2, y + h//2), min(w, h)//2 - 2, (255, 0, 0), -1)
+                vis_image = cv2.addWeighted(vis_image, 1, mask, 0.3, 0)
         
         return valid_bubbles, vis_image
 
