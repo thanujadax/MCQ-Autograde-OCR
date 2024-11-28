@@ -10,10 +10,12 @@ class ProcessingResult:
     detected_bubbles: List[Tuple[int, int, int, int]]
 
 class MCQProcessor:
-    def __init__(self, threshold: int = 128, bubble_size: int = 20, contrast: float = 1.0):
+    def __init__(self, threshold: int = 128, min_bubble_size: int = 15, max_bubble_size: int = 30, contrast: float = 1.0, correct_answers: Dict[int, str] = None):
         self.threshold = threshold
-        self.bubble_size = bubble_size
+        self.min_bubble_size = min_bubble_size
+        self.max_bubble_size = max_bubble_size
         self.contrast = contrast
+        self.correct_answers = correct_answers or {}
     
     def preprocess_image(self, image: np.ndarray) -> Tuple[np.ndarray, Dict[str, np.ndarray]]:
         # Convert to grayscale
@@ -63,8 +65,8 @@ class MCQProcessor:
         # Create visualization image
         vis_image = original_image.copy()
         
-        min_area = np.pi * (self.bubble_size / 2) ** 2 * 0.5
-        max_area = np.pi * (self.bubble_size * 1.5) ** 2
+        min_area = np.pi * (self.min_bubble_size / 2) ** 2 * 0.5
+        max_area = np.pi * (self.max_bubble_size / 2) ** 2
         
         for contour in contours:
             # Filter by area and circularity
@@ -83,17 +85,27 @@ class MCQProcessor:
                 x, y, w, h = cv2.boundingRect(contour)
                 bubbles.append((x, y, w, h))
                 
-                # Draw both marked and unmarked bubbles
-                # Blue for detected bubbles
+                # Calculate question number and option
+                question_num = len(bubbles) // 5 + 1  # Assuming 5 options per question
+                option = chr(65 + len(bubbles) % 5)  # Convert to A, B, C, etc.
+                
+                # Draw bubbles with different colors based on state
+                # Blue rectangle for all detected bubbles
                 cv2.rectangle(vis_image, (x, y), (x+w, y+h), (255, 0, 0), 2)
                 
                 # Check if bubble is marked (filled)
                 roi = preprocessed[y:y+h, x:x+w]
-                if np.mean(roi) > 127:  # If bubble is filled
-                    # Draw filled circle inside the rectangle
+                is_marked = np.mean(roi) > 127
+                
+                if is_marked:
+                    # Red dot for marked answers
                     center = (x + w//2, y + h//2)
                     radius = min(w, h) // 4
                     cv2.circle(vis_image, center, radius, (0, 0, 255), -1)
+                
+                # Green outline for correct answers
+                if self.correct_answers.get(question_num) == option:
+                    cv2.rectangle(vis_image, (x-2, y-2), (x+w+2, y+h+2), (0, 255, 0), 2)
         
         return bubbles, vis_image
     

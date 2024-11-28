@@ -18,10 +18,46 @@ def main():
     # Sidebar controls
     st.sidebar.header("Parameters")
     
-    # Processing parameters
-    threshold = st.sidebar.slider("Threshold", 0, 255, 128)
-    bubble_size = st.sidebar.slider("Bubble Size", 10, 50, 20)
-    contrast = st.sidebar.slider("Contrast", 0.5, 2.0, 1.0)
+    # Processing parameters with tooltips
+    threshold = st.sidebar.slider(
+        "Darkness Threshold",
+        0, 255, 128,
+        help="Controls how dark a marked bubble needs to be to be considered filled"
+    )
+    
+    min_bubble_size = st.sidebar.slider(
+        "Minimum Bubble Size",
+        10, 40, 15,
+        help="Minimum size (in pixels) of bubbles to detect"
+    )
+    
+    max_bubble_size = st.sidebar.slider(
+        "Maximum Bubble Size",
+        min_bubble_size, 50, 30,
+        help="Maximum size (in pixels) of bubbles to detect"
+    )
+    
+    contrast = st.sidebar.slider(
+        "Contrast Enhancement",
+        0.5, 2.0, 1.0,
+        help="Adjust image contrast to improve bubble detection"
+    )
+    
+    # Correct answers input
+    correct_answers_input = st.sidebar.text_input(
+        "Correct Answers",
+        help="Enter correct answers in format '1:A,2:B,3:C'"
+    )
+    
+    # Parse correct answers
+    correct_answers = {}
+    if correct_answers_input:
+        try:
+            for answer in correct_answers_input.split(','):
+                q, a = answer.strip().split(':')
+                correct_answers[int(q)] = a.strip().upper()
+        except ValueError:
+            st.sidebar.warning("Please use the format '1:A,2:B,3:C' for correct answers")
     
     # File upload
     uploaded_file = st.file_uploader("Choose an answer sheet image", type=['png', 'jpg', 'jpeg'])
@@ -30,8 +66,10 @@ def main():
         # Create processor instance
         processor = MCQProcessor(
             threshold=threshold,
-            bubble_size=bubble_size,
-            contrast=contrast
+            min_bubble_size=min_bubble_size,
+            max_bubble_size=max_bubble_size,
+            contrast=contrast,
+            correct_answers=correct_answers
         )
         
         # Load and process image
