@@ -94,18 +94,35 @@ class MCQProcessor:
             # Blue rectangle for all detected bubbles
             cv2.rectangle(vis_image, (x, y), (x+w, y+h), (255, 0, 0), 1)
             
-            # Check if bubble is marked
-            roi = preprocessed[y:y+h, x:x+w]
-            is_marked = np.mean(roi) > 127
-            
-            if is_marked:
-                # Red square for marked answers
-                cv2.rectangle(vis_image, (x, y), (x+w, y+h), (0, 0, 255), 2)
-            
-            # Calculate question number and option
+            # Get bubble index and question info
             bubble_index = valid_bubbles.index((x, y, w, h))
             question_num = (bubble_index // self.OPTIONS_PER_QUESTION) + 1
             option = chr(65 + (bubble_index % self.OPTIONS_PER_QUESTION))
+            
+            # Check if bubble meets marking criteria
+            roi = preprocessed[y:y+h, x:x+w]
+            darkness = np.mean(roi)
+            
+            # Get darkness values for all options in this question
+            question_start = (question_num - 1) * self.OPTIONS_PER_QUESTION
+            question_end = question_start + self.OPTIONS_PER_QUESTION
+            question_bubbles = valid_bubbles[question_start:question_end]
+            darkness_values = []
+            
+            for qx, qy, qw, qh in question_bubbles:
+                q_roi = preprocessed[qy:qy+qh, qx:qx+qw]
+                darkness_values.append(np.mean(q_roi))
+            
+            # Check if this bubble is significantly darker
+            max_darkness = max(darkness_values)
+            second_max = sorted(darkness_values)[-2] if len(darkness_values) > 1 else 0
+            is_marked = (darkness > 127 and 
+                        darkness == max_darkness and 
+                        (max_darkness - second_max) > 30)
+            
+            if is_marked:
+                # Red rectangle for marked answers meeting criteria
+                cv2.rectangle(vis_image, (x, y), (x+w, y+h), (0, 0, 255), 2)
             
             # Blue filled rectangle for correct answers
             if self.correct_answers.get(question_num) == option:
@@ -117,25 +134,37 @@ class MCQProcessor:
         answers = {}
         confidence = {}
         
+        # Thresholds for answer detection
+        darkness_threshold = 127  # Minimum darkness to consider marked
+        min_darkness_diff = 30   # Minimum difference from other options
+        
         # Process bubbles in groups of 5 (one group per question)
         for q in range(self.TOTAL_QUESTIONS):
             question_bubbles = bubbles[q * self.OPTIONS_PER_QUESTION : (q + 1) * self.OPTIONS_PER_QUESTION]
+            darkness_values = []
             
             if len(question_bubbles) == self.OPTIONS_PER_QUESTION:
-                max_darkness = 0
-                selected_option = None
-                
-                for opt_idx, (x, y, w, h) in enumerate(question_bubbles):
+                # Calculate darkness for each option
+                for x, y, w, h in question_bubbles:
                     roi = image[y:y+h, x:x+w]
                     darkness = np.mean(roi)
-                    
-                    if darkness > max_darkness:
-                        max_darkness = darkness
-                        selected_option = chr(65 + opt_idx)
+                    darkness_values.append(darkness)
                 
-                question_num = q + 1
-                answers[question_num] = selected_option
-                confidence[question_num] = max_darkness / 255
+                # Find the darkest bubble and second darkest
+                max_darkness = max(darkness_values)
+                second_max = sorted(darkness_values)[-2] if len(darkness_values) > 1 else 0
+                
+                # Check if the darkest bubble meets our criteria
+                if max_darkness > darkness_threshold and (max_darkness - second_max) > min_darkness_diff:
+                    selected_idx = darkness_values.index(max_darkness)
+                    question_num = q + 1
+                    answers[question_num] = chr(65 + selected_idx)
+                    confidence[question_num] = (max_darkness - second_max) / 255
+                else:
+                    # Mark as unanswered if criteria not met
+                    question_num = q + 1
+                    answers[question_num] = None
+                    confidence[question_num] = 0.0
         
         return answers, confidence
     
