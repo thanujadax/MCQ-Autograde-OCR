@@ -15,7 +15,7 @@ class MCQProcessor:
         self.bubble_size = bubble_size
         self.contrast = contrast
     
-    def preprocess_image(self, image: np.ndarray) -> np.ndarray:
+    def preprocess_image(self, image: np.ndarray) -> Tuple[np.ndarray, Dict[str, np.ndarray]]:
         # Convert to grayscale
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         
@@ -25,20 +25,47 @@ class MCQProcessor:
         # Apply Gaussian blur
         blurred = cv2.GaussianBlur(adjusted, (5, 5), 0)
         
-        # Apply threshold
-        _, thresh = cv2.threshold(blurred, self.threshold, 255, cv2.THRESH_BINARY_INV)
+        # Apply adaptive thresholding
+        thresh = cv2.adaptiveThreshold(
+            blurred,
+            255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY_INV,
+            11,  # Block size
+            2    # C constant
+        )
         
-        return thresh
+        # Create morphological kernel
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        
+        # Apply morphological operations
+        cleaned = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
+        
+        debug_images = {
+            'grayscale': gray,
+            'contrast_adjusted': adjusted,
+            'blurred': blurred,
+            'threshold': thresh,
+            'cleaned': cleaned
+        }
+        
+        return cleaned, debug_images
     
-    def detect_bubbles(self, preprocessed: np.ndarray) -> List[Tuple[int, int, int, int]]:
+    def detect_bubbles(self, preprocessed: np.ndarray, original_image: np.ndarray) -> Tuple[List[Tuple[int, int, int, int]], np.ndarray]:
         # Find contours
-        contours, _ = cv2.findContours(
+        contours, hierarchy = cv2.findContours(
             preprocessed,
             cv2.RETR_EXTERNAL,
             cv2.CHAIN_APPROX_SIMPLE
         )
         
         bubbles = []
+        # Create visualization image
+        vis_image = original_image.copy()
+        
+        min_area = np.pi * (self.bubble_size / 2) ** 2 * 0.5
+        max_area = np.pi * (self.bubble_size * 1.5) ** 2
+        
         for contour in contours:
             # Filter by area and circularity
             area = cv2.contourArea(contour)
@@ -48,11 +75,27 @@ class MCQProcessor:
                 
             circularity = 4 * np.pi * area / (perimeter * perimeter)
             
-            if circularity > 0.7 and area > 100:
+            # Improved filtering criteria
+            if (circularity > 0.8 and  # More strict circularity
+                min_area < area < max_area and  # Dynamic area based on bubble_size
+                cv2.contourArea(contour) / (cv2.minAreaRect(contour)[1][0] * cv2.minAreaRect(contour)[1][1]) > 0.7):  # Rectangularity check
+                
                 x, y, w, h = cv2.boundingRect(contour)
                 bubbles.append((x, y, w, h))
+                
+                # Draw both marked and unmarked bubbles
+                # Blue for detected bubbles
+                cv2.rectangle(vis_image, (x, y), (x+w, y+h), (255, 0, 0), 2)
+                
+                # Check if bubble is marked (filled)
+                roi = preprocessed[y:y+h, x:x+w]
+                if np.mean(roi) > 127:  # If bubble is filled
+                    # Draw filled circle inside the rectangle
+                    center = (x + w//2, y + h//2)
+                    radius = min(w, h) // 4
+                    cv2.circle(vis_image, center, radius, (0, 0, 255), -1)
         
-        return bubbles
+        return bubbles, vis_image
     
     def analyze_answers(self, image: np.ndarray, bubbles: List[Tuple[int, int, int, int]]) -> Tuple[Dict[int, str], Dict[int, float]]:
         answers = {}
@@ -103,16 +146,11 @@ class MCQProcessor:
         }
         
         # Preprocess
-        preprocessed = self.preprocess_image(image)
-        debug_images['preprocessed'] = preprocessed
+        preprocessed, preprocess_debug = self.preprocess_image(image)
+        debug_images.update(preprocess_debug)
         
         # Detect bubbles
-        bubbles = self.detect_bubbles(preprocessed)
-        
-        # Draw bubbles on debug image
-        bubble_visualization = image.copy()
-        for x, y, w, h in bubbles:
-            cv2.rectangle(bubble_visualization, (x, y), (x+w, y+h), (0, 255, 0), 2)
+        bubbles, bubble_visualization = self.detect_bubbles(preprocessed, image)
         debug_images['detected_bubbles'] = bubble_visualization
         
         # Analyze answers
